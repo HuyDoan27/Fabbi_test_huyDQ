@@ -12,10 +12,11 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 from app.api.deps import get_redis
-from app.core.security import create_access_token
+from app.core.security import create_access_token, get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.user import User
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_maker = async_sessionmaker(
@@ -56,6 +57,7 @@ def override_get_redis():
     mock_redis.get = AsyncMock(return_value=None)
     mock_redis.set = AsyncMock()
     mock_redis.delete = AsyncMock()
+    mock_redis.delete_pattern = AsyncMock()
     return mock_redis
 
 
@@ -76,6 +78,30 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_session_maker() as session:
         yield session
+
+
+@pytest.fixture
+async def user(db_session: AsyncSession) -> User:
+    """Create a test user."""
+    test_user = User(
+        email="test-user@example.com",
+        hashed_password=get_password_hash("password123"),
+    )
+    db_session.add(test_user)
+    await db_session.commit()
+    await db_session.refresh(test_user)
+    return test_user
+
+
+@pytest.fixture
+def auth_headers_for():
+    """Create auth headers for a specific user."""
+
+    def _create_headers(user: User) -> dict:
+        token = create_access_token(data={"sub": str(user.id)})
+        return {"Authorization": f"Bearer {token}"}
+
+    return _create_headers
 
 
 @pytest.fixture
