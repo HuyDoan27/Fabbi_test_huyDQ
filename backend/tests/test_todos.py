@@ -262,3 +262,49 @@ async def test_partial_update_title_keeps_description(
 
     assert data["title"] == "Updated Title"
     assert data["description"] == "Keep this description"
+    
+    
+@pytest.mark.asyncio
+async def test_cache_invalidated_after_todo_mutations(
+    client: AsyncClient,
+    user,
+    auth_headers_for,
+    redis_mock,
+):
+    headers = auth_headers_for(user)
+    expected_pattern = f"todos:list:{user.id}:*"
+
+    # Create
+    create_response = await client.post(
+        "/api/v1/todos",
+        json={"title": "Cache Todo"},
+        headers=headers,
+    )
+
+    assert create_response.status_code == 201
+    redis_mock.delete_pattern.assert_awaited_once_with(expected_pattern)
+
+    todo_id = create_response.json()["id"]
+
+    # Update
+    redis_mock.delete_pattern.reset_mock()
+
+    update_response = await client.put(
+        f"/api/v1/todos/{todo_id}",
+        json={"title": "Updated Cache Todo"},
+        headers=headers,
+    )
+
+    assert update_response.status_code == 200
+    redis_mock.delete_pattern.assert_awaited_once_with(expected_pattern)
+
+    # Delete
+    redis_mock.delete_pattern.reset_mock()
+
+    delete_response = await client.delete(
+        f"/api/v1/todos/{todo_id}",
+        headers=headers,
+    )
+
+    assert delete_response.status_code == 204
+    redis_mock.delete_pattern.assert_awaited_once_with(expected_pattern)
