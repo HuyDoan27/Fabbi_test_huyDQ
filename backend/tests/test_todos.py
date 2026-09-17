@@ -2,6 +2,8 @@
 
 import pytest
 from httpx import AsyncClient
+from app.core.security import get_password_hash
+from app.models.user import User
 
 
 async def get_auth_token(client: AsyncClient, email: str = "todo@example.com") -> str:
@@ -120,3 +122,59 @@ async def test_get_single_todo(client: AsyncClient):
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Single Todo"
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_access_another_users_todo(
+    client: AsyncClient,
+    user,
+    auth_headers_for,
+    db_session,
+):
+    # User A creates a todo
+    user_a_headers = auth_headers_for(user)
+
+    create_response = await client.post(
+        "/api/v1/todos",
+        json={
+            "title": "Private Todo",
+            "description": "User A's private todo",
+        },
+        headers=user_a_headers,
+    )
+
+    assert create_response.status_code == 201
+    todo_id = create_response.json()["id"]
+
+    # Create User B
+    user_b = User(
+        email="user-b@example.com",
+        hashed_password=get_password_hash("password123"),
+    )
+    db_session.add(user_b)
+    await db_session.commit()
+    await db_session.refresh(user_b)
+
+    user_b_headers = auth_headers_for(user_b)
+
+    # User B cannot read User A's todo
+    get_response = await client.get(
+        f"/api/v1/todos/{todo_id}",
+        headers=user_b_headers,
+    )
+    assert get_response.status_code == 404
+
+    # User B cannot update User A's todo
+    update_response = await client.put(
+        f"/api/v1/todos/{todo_id}",
+        json={"title": "Hacked Todo"},
+        headers=user_b_headers,
+    )
+    assert update_response.status_code == 404
+
+    # User B cannot delete User A's todo
+    delete_response = await client.delete(
+        f"/api/v1/todos/{todo_id}",
+        headers=user_b_headers,
+    )
+    assert delete_response.status_code == 404
