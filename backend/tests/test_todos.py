@@ -227,3 +227,38 @@ async def test_toggle_todo_true_to_false(
 
     assert response.status_code == 200
     assert response.json()["completed"] is False
+    
+    
+@pytest.mark.asyncio
+async def test_partial_update_title_keeps_description(
+    client: AsyncClient,
+    user,
+    auth_headers_for,
+):
+    headers = auth_headers_for(user)
+
+    # Create todo with title and description
+    create_response = await client.post(
+        "/api/v1/todos",
+        json={
+            "title": "Original Title",
+            "description": "Keep this description",
+        },
+        headers=headers,
+    )
+
+    assert create_response.status_code == 201
+    todo_id = create_response.json()["id"]
+
+    # Update only title
+    update_response = await client.put(
+        f"/api/v1/todos/{todo_id}",
+        json={"title": "Updated Title"},
+        headers=headers,
+    )
+
+    assert update_response.status_code == 200
+    data = update_response.json()
+
+    assert data["title"] == "Updated Title"
+    assert data["description"] == "Keep this description"
