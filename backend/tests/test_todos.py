@@ -178,3 +178,52 @@ async def test_user_cannot_access_another_users_todo(
         headers=user_b_headers,
     )
     assert delete_response.status_code == 404
+    
+    
+@pytest.mark.asyncio
+async def test_toggle_todo_true_to_false(
+    client: AsyncClient,
+    user,
+    auth_headers_for,
+):
+    headers = auth_headers_for(user)
+
+    # Create todo
+    create_response = await client.post(
+        "/api/v1/todos",
+        json={"title": "Toggle Todo"},
+        headers=headers,
+    )
+
+    assert create_response.status_code == 201
+    todo_id = create_response.json()["id"]
+    assert create_response.json()["completed"] is False
+
+    # false -> true
+    response = await client.put(
+        f"/api/v1/todos/{todo_id}",
+        json={"completed": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["completed"] is True
+
+    # true -> false
+    response = await client.put(
+        f"/api/v1/todos/{todo_id}",
+        json={"completed": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["completed"] is False
+
+    # Verify persistence
+    response = await client.get(
+        f"/api/v1/todos/{todo_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["completed"] is False
